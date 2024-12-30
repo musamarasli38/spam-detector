@@ -9,3 +9,13 @@ frontend/node_modules/
 # OS-specific files
 .DS_Store
 Thumbs.db
+
+# Other files (e.g., IDE-specific)
+.idea/
+.vscode/
+
+# Ignore any build artifacts or log files
+frontend/build/
+frontend/.env*
+npm-debug.log*
+yarn-debug.log*
