@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { predictComment } from './api';
+import RECAPTCHA_SECRET_KEY from '@env/RECAPTCHA_SECRET_KEY';
 
 function App() {
   const [comment, setComment] = useState('');
@@ -7,6 +8,18 @@ function App() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    try {
+      const token = await window.grecaptcha.execute(RECAPTCHA_SECRET_KEY, { action: 'submit' });
+
+      const response = await fetch('/predict', {
+        comment: 'This is a test comment',
+        recaptcha_token: token,
+      })
+
+      console.log(response.data);
+    } catch (error) {
+      console.error(error);
+    }
     const result = await predictComment(comment);
     setPrediction(result);
   };

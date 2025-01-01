@@ -1,7 +1,12 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from src.data_processing import preprocess_data
 from src.feature_engineering import vectorize_text
+from dotenv import load_dotenv
+import os
+import requests
 from src.models import train_logistic_regression, evaluate_model
 from src.database import create_connection, create_table, insert_data, load_data_from_db
 from flask import Flask, request, jsonify
@@ -9,7 +14,17 @@ from flask_cors import CORS
 import joblib
 
 app = Flask(__name__)
-CORS(app, resources={r"/predict": {"origins": "http://localhost:3000"}})
+CORS(app, resources={r"/predict": {"origins": "https://spam-detector.musamarasli.com/"}})
+
+
+load_dotenv()
+RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"]
+)
 
 db_file = 'data/spam_detection.db'
 
@@ -39,17 +54,31 @@ def train_and_save_model():
 model, vectorizer = train_and_save_model()
 
 @app.route('/predict', methods=['POST'])
+@limiter.limit("10 per minute")
 def predict():
-    data = request.json  
-    comment = data.get('comment', '')  
-    if not comment:
-        return jsonify({'error': 'No comment provided'}), 400
+    try:
+        recaptcha_response = request.json.get('recaptcha_token')
+        secret_key = RECAPTCHA_SECRET_KEY
+        captcha_verification = requests.post(
+            'https://www.google.com/recaptcha/api/siteverify',
+            data={'secret': secret_key, 'response': recaptcha_response}
+        ).json()
+        
+        if not captcha_verification['success']:
+            return jsonify({'error': 'Captcha verification failed'}), 400
+        
+        data = request.json  
+        comment = data.get('comment', '')  
+        if not comment:
+            return jsonify({'error': 'No comment provided'}), 400
 
-    vectorized_comment = vectorizer.transform([comment])
-    prediction = model.predict(vectorized_comment)[0]
-    result = 'spam' if prediction == 1 else 'not spam'
+        vectorized_comment = vectorizer.transform([comment])
+        prediction = model.predict(vectorized_comment)[0]
+        result = 'spam' if prediction == 1 else 'not spam'
+        return jsonify({'comment': comment, 'prediction': result})
 
-    return jsonify({'comment': comment, 'prediction': result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
